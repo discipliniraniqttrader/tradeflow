@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trading Flow</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: тетрадка на трейдър, превърната в инструмент. Карирана хартия, синьо мастило, зелен и червен маркер. */
+:root{
+  --paper:#eef1f5; --grid:#dfe5ec; --sheet:#fbfcfd; --ink:#17233a; --muted:#5a6880; --rule:#d3dae4;
+  --blue:#2450a6; --blue-soft:#e3eaf7; --win:#127a4e; --win-soft:#dff2e9; --loss:#c22f3a; --loss-soft:#fae5e6;
+  --warn:#9a6300; --warn-soft:#fbf0d9; --cell:#e7ebf1;
+  --hand:"Caveat","Segoe Print",cursive; --body:"Inter","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#121926; --grid:#182132; --sheet:#1a2333; --ink:#e8edf5; --muted:#9aa8bd; --rule:#2c384c;
+  --blue:#86aaf2; --blue-soft:#24324c; --win:#4cc48f; --win-soft:#17352b; --loss:#f0777f; --loss-soft:#3d2026;
+  --warn:#e0b050; --warn-soft:#3a2f17; --cell:#243044; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#121926; --grid:#182132; --sheet:#1a2333; --ink:#e8edf5; --muted:#9aa8bd; --rule:#2c384c;
+  --blue:#86aaf2; --blue-soft:#24324c; --win:#4cc48f; --win-soft:#17352b; --loss:#f0777f; --loss-soft:#3d2026;
+  --warn:#e0b050; --warn-soft:#3a2f17; --cell:#243044; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background-color:var(--paper);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:24px 24px;color:var(--ink);font:400 14px/1.5 var(--body);font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;padding-block:18px 8px}
+header.top h1{font:700 38px/1 var(--hand);margin:0;color:var(--blue)}
+header.top span{color:var(--muted);font-size:13px}
+nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--paper);border-bottom:2px solid var(--ink)}
+nav.tabs .wrap{display:flex;gap:2px;overflow-x:auto}
+nav.tabs button{appearance:none;background:none;border:0;color:var(--muted);font:600 14px var(--body);padding:11px 14px;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-2px}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-color:var(--blue)}
+main{padding-block:16px 30px;display:grid;gap:14px}
+.sheet{background:var(--sheet);border:1px solid var(--rule);border-radius:6px;padding:16px;min-width:0}
+.sheet h2{font-size:15px;font-weight:700;margin:0 0 2px}
+.sheet .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}
+.banner{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;background:var(--warn-soft);border:1px solid var(--warn);color:var(--ink);border-radius:6px;padding:9px 12px}
+.banner b{color:var(--warn)}
+.status{display:flex;align-items:center;gap:10px;border-radius:6px;padding:11px 14px;font-weight:600;border:1px solid var(--rule);background:var(--sheet)}
+.status .dot{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700;color:var(--sheet)}
+.status.good .dot{background:var(--win)} .status.stop .dot{background:var(--loss)} .status.wait .dot{background:var(--warn)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden;background:var(--sheet)}
+.seg button{appearance:none;border:0;background:none;color:var(--muted);font:600 13px var(--body);padding:7px 12px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed="true"]{background:var(--blue-soft);color:var(--ink)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.kpi{background:var(--sheet);padding:13px 15px;min-width:0}
+.kpi .l{color:var(--muted);font-size:12px;font-weight:500}
+.kpi .v{font-size:25px;font-weight:700;line-height:1.25;letter-spacing:-.01em}
+.kpi .h{color:var(--muted);font-size:12px}
+.pos{color:var(--win)} .neg{color:var(--loss)}
+.insight{font:600 25px/1.25 var(--hand);color:var(--ink);margin:0}
+.insight mark{background:none;color:inherit;border-bottom:3px solid var(--blue)}
+.chart{width:100%;position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart text{font:12px var(--body);fill:var(--muted)}
+.chart text.end{font-weight:600;fill:var(--ink)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--muted);font-size:12px;margin-bottom:6px}
+.legend i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+.legend i.dash{border-top-style:dashed}
+.legend i.ring{width:9px;height:9px;border:2px solid var(--loss);border-radius:50%;background:var(--sheet)}
+.bars{display:grid;gap:3px}
+.bar{display:grid;grid-template-columns:minmax(0,150px) minmax(0,1fr) 62px;align-items:center;gap:8px;padding:3px 0;font-size:13px;cursor:default}
+.bar .n{min-width:0;overflow-wrap:anywhere}
+.bar .n small{color:var(--muted);margin-left:3px}
+.bar .t{position:relative;height:12px}
+.bar .t::before{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1px solid var(--rule)}
+.bar .f{position:absolute;top:1px;height:10px;border-radius:0 4px 4px 0}
+.bar .f.neg{right:50%;background:var(--loss);border-radius:4px 0 0 4px}
+.bar .f.pos{left:50%;background:var(--win)}
+.bar .x{text-align:right;font-weight:600}
+.empty{color:var(--muted);padding:14px 0}
+.cal-scroll{overflow-x:auto}
+.cal{display:grid;grid-auto-flow:column;grid-template-rows:16px repeat(7,18px);gap:3px;width:max-content}
+.cal div{width:18px;height:18px;border-radius:3px;background:var(--cell)}
+.cal div.head,.cal div.side{background:none;font-size:11px;color:var(--muted);white-space:nowrap;height:16px;line-height:16px;overflow:visible}
+.cal div.side{height:18px;line-height:18px;width:20px}
+.hist{display:flex;align-items:flex-end;gap:3px;height:124px;border-bottom:1px solid var(--rule)}
+.hist>div{flex:1;min-width:0;border-radius:4px 4px 0 0;min-height:0;cursor:default}
+.histx{display:flex;gap:3px;color:var(--muted);font-size:11px;margin-top:4px}
+.histx span{flex:1;min-width:0;text-align:center;overflow:hidden}
+label.f{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--muted);min-width:0}
+input,select,textarea{font:400 14px var(--body);color:var(--ink);background:var(--sheet);border:1px solid var(--rule);border-radius:5px;padding:8px 9px;width:100%;min-width:0}
+textarea{resize:vertical;min-height:70px}
+:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
+.group{margin-top:15px}
+.group>.t{font-size:13px;font-weight:700;margin-bottom:6px;display:block}
+.ticks{display:flex;flex-wrap:wrap;gap:6px}
+.tick{appearance:none;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--rule);background:var(--sheet);color:var(--ink);font:500 13px var(--body);padding:7px 10px;border-radius:5px;cursor:pointer;text-align:left}
+.tick::before{content:"";flex:none;width:15px;height:15px;border:1.5px solid var(--muted);border-radius:3px;display:grid;place-items:center;font-size:12px;line-height:1}
+.tick[aria-pressed="true"]{background:var(--win-soft);border-color:var(--win)}
+.tick[aria-pressed="true"]::before{content:"✓";background:var(--win);border-color:var(--win);color:var(--sheet);font-weight:700}
+.tick.bad[aria-pressed="true"]{background:var(--loss-soft);border-color:var(--loss)}
+.tick.bad[aria-pressed="true"]::before{content:"✕";background:var(--loss);border-color:var(--loss)}
+.btn{appearance:none;border:1px solid var(--rule);background:var(--sheet);color:var(--ink);font:600 13px var(--body);padding:8px 12px;border-radius:5px;cursor:pointer}
+.btn.pri{background:var(--blue);border-color:var(--blue);color:var(--sheet)}
+.btn.danger{color:var(--loss);border-color:var(--loss)}
+.btn.small{padding:4px 8px;font-size:12px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.form-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
+@media (max-width:820px){.form-layout{grid-template-columns:minmax(0,1fr)}}
+.preview{position:sticky;top:60px}
+.bigR{font:700 54px/1 var(--hand)}
+.check{display:flex;gap:8px;font-size:13px;padding:4px 0}
+.check b{flex:none;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;font-size:11px;color:var(--sheet)}
+.check.ok b{background:var(--win)} .check.no b{background:var(--loss)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
+th{font-size:12px;font-weight:600;color:var(--muted);text-align:left;padding:7px 8px;border-bottom:1px solid var(--ink)}
+td{padding:7px 8px;border-bottom:1px solid var(--rule)}
+td.num,th.num{text-align:right}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;background:var(--loss-soft);color:var(--loss);margin-right:3px}
+.pill.ok{background:var(--win-soft);color:var(--win)}
+.prog{height:14px;background:var(--cell);border-radius:4px;overflow:hidden;margin:6px 0 3px}
+.prog i{display:block;height:100%}
+#tip{position:fixed;z-index:30;pointer-events:none;background:var(--ink);color:var(--sheet);font-size:12px;line-height:1.45;padding:6px 9px;border-radius:5px;max-width:250px;white-space:pre-line}
+#toast{position:fixed;z-index:31;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--sheet);font-weight:600;padding:9px 14px;border-radius:6px;max-width:90vw}
+#modal{position:fixed;inset:0;z-index:40;background:rgba(10,16,28,.55);display:grid;place-items:center;padding:16px}
+#modal .sheet{width:min(620px,100%)}
+#modal textarea{height:210px;font-size:12px}
+header.top .acct{margin-left:auto;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--cell);color:var(--muted)}
+.badge.pro{background:var(--warn-soft);color:var(--warn)}
+.lock{font-size:11px;margin-left:4px;opacity:.7}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:14px}
+.plan .price{font:700 44px/1 var(--hand);margin:8px 0}
+.plan ul{padding-left:18px;margin:8px 0 14px}
+.plan.best{border-color:var(--blue);border-width:2px}
+.lessons{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:14px}
+.lesson .vid{position:relative;aspect-ratio:16/9;background:var(--cell);border-radius:5px;overflow:hidden;margin-bottom:10px;display:grid;place-items:center;color:var(--muted);font-weight:600}
+.lesson .vid iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.chatlog{height:min(55vh,520px);overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px}
+.msg{max-width:min(560px,92%);background:var(--cell);border-radius:8px;padding:7px 10px}
+.msg.me{align-self:flex-end;background:var(--blue-soft)}
+.msg b{font-size:12px}.msg time{color:var(--muted);font-size:11px;margin-left:6px}
+.msg p{margin:2px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.coach p{margin:6px 0}
+footer{color:var(--muted);font-size:12px;padding-block:0 26px}
+footer a{color:var(--blue)}
+@media (prefers-reduced-motion:no-preference){.prog i,.bar .f{transition:width .25s}}
+</style>
+</head>
+<body>
+<div class="wrap"><header class="top"><h1>Trading Flow</h1><span>Дневник на дисциплината</span><div class="acct" id="acct"></div></header></div>
+<nav class="tabs"><div class="wrap" role="tablist" id="tabs"></div></nav>
+<div class="wrap"><main id="view"></main>
+<footer>Образователен инструмент, не е финансов съвет. Трейдингът носи висок риск. Без вход данните стоят само в този браузър; с вход се пазят в облака. Плащанията минават през Stripe. Създаден от <a href="https://www.youtube.com/channel/UCqOH81FaqP3ByyNECqoIJnQ" target="_blank" rel="noopener">Дисциплинираният Трейдър</a>.</footer></div>
+<div id="tip" hidden></div><div id="toast" hidden></div><div id="modal" hidden></div>
+
+<script>
+'use strict';
+const KEY='dt-dnevnik-v1';
+const DAYS=['неделя','понеделник','вторник','сряда','четвъртък','петък','събота'];
+const MISTAKES={almost:'„Почти“ сетъп',stop:'Местих стопа',tp:'Дръпнах TP',revenge:'Реванш след загуба',fomo:'Страх да не изпусна',size:'По-голям размер'};
+const FLAGS={day:'Забранен ден',window:'Извън прозореца',over:'Над лимита сделки',afterstop:'След дневния стоп',plan:'Непълен чек-лист'};
+const EMOTIONS=['Спокоен','Нетърпелив','Страх','Алчност','Разсеян'];
+const POINT={NQ:20,MNQ:2,ES:50,MES:5,YM:5,MYM:.5,RTY:50,M2K:5,GC:100,MGC:10,CL:1000,MCL:100};
+const DEFAULTS={start:'10:00',end:'12:30',maxTrades:1,dailyLoss:1,rValue:100,noDays:[1,5],
+  setups:['LTF sweep в 1h FVG','Inverse FVG на LTF'],
+  checklist:['Цената е в 1h FVG','Има sweep на LTF','Inverse FVG дава сигнал','Стопът е на място преди входа','Рискът е 1R'],
+  acc:{name:'Funded акаунт',size:50000,target:3000,dd:2500,type:'trailing'}};
+const TABS=[['dash','Табло'],['new','Нова сделка'],['list','Сделки'],['acc','Акаунт'],['rules','Правила'],['learn','Обучение'],['chat','Чат'],['plan','Абонамент']];
+
+let ui={tab:'dash',period:90,setup:'',editId:null,form:null};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const dayKey=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const parseDay=k=>{const[a,b,c]=k.split('-').map(Number);return new Date(a,b-1,c)};
+const bgDate=k=>{const[a,b,c]=k.split('-');return c+'.'+b+'.'+a};
+const round=(x,n=2)=>{const p=10**n;return Math.round(x*p)/p};
+const fmtR=r=>(r>0?'+':r<0?'−':'')+round(Math.abs(r)).toString()+'R';
+const fmtM=m=>(m<0?'−':'')+'$'+Math.abs(Math.round(m)).toLocaleString('en-US');
+const cls=r=>r>0?'pos':r<0?'neg':'';
+const num=v=>{if(v===''||v==null)return null;const n=parseFloat(String(v).replace(',','.'));return isFinite(n)?n:null};
+const toMin=t=>{if(!t)return null;const[a,b]=t.split(':').map(Number);return a*60+(b||0)};
+let store=load();
+
+function load(){
+  let d=null;
+  try{d=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){}
+  if(d&&Array.isArray(d.trades))return{demo:!!d.demo,trades:d.demo?demoTrades():d.trades,cfg:Object.assign(clone(DEFAULTS),d.cfg||{})};
+  return{demo:true,trades:demoTrades(),cfg:clone(DEFAULTS)};
+}
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(store.demo?{demo:true,trades:[],cfg:store.cfg}:store))}catch(e){if(!cloud.user)toast('Браузърът не позволи запис. Направи резервно копие от „Правила“.')}cloudSave()}
+
+/* Примерни данни: едни и същи при всяко отваряне и ясно маркирани */
+function demoTrades(){
+  let seed=20261104;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+  const out=[],now=new Date(),setups=DEFAULTS.setups,keys=Object.keys(MISTAKES);
+  for(let i=95;i>=1;i--){
+    const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i),w=d.getDay();
+    if(w===0||w===6)continue;
+    const sinful=(w===1||w===5);
+    if(rnd()>(sinful?.14:.68))continue;
+    const n=rnd()<.13?2:1;
+    for(let j=0;j<n;j++){
+      const m=[];if(rnd()<(j?.75:.2))m.push(keys[Math.floor(rnd()*keys.length)]);
+      const clean=!m.length&&!sinful&&!j;
+      const win=rnd()<(clean?.58:.3);
+      const r=win?round(1.2+rnd()*(clean?1.6:.7)):round(clean?-1:-1-rnd()*.7);
+      const late=!clean&&rnd()<.25;
+      const h=late?13:10+Math.floor(rnd()*2),mi=Math.floor(rnd()*60);
+      const cl=DEFAULTS.checklist.filter(()=>clean||rnd()<.8);
+      out.push({id:'demo'+i+j,date:dayKey(d),time:pad(h)+':'+pad(mi),symbol:'NQ',dir:rnd()<.5?'long':'short',setup:setups[rnd()<.6?0:1],qty:1,entry:null,stop:null,exit:null,r,pnl:round(r*DEFAULTS.rValue,0),mistakes:m,checked:cl,total:DEFAULTS.checklist.length,emotion:clean?'Спокоен':EMOTIONS[1+Math.floor(rnd()*4)],note:'Примерна сделка',source:'demo'});
+    }
+  }
+  return out;
+}
+
+/* Автоматична проверка на всяка сделка спрямо правилата */
+function analyse(list){
+  const cfg=store.cfg,sorted=list.slice().sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+  const count={},dayR={},s=toMin(cfg.start),e=toMin(cfg.end);
+  return sorted.map(t=>{
+    const flags=[],w=parseDay(t.date).getDay(),tm=toMin(t.time);
+    if(cfg.noDays.includes(w))flags.push('day');
+    if(tm!=null&&(tm<s||tm>e))flags.push('window');
+    count[t.date]=(count[t.date]||0)+1;
+    if(count[t.date]>cfg.maxTrades)flags.push('over');
+    if((dayR[t.date]||0)<=-cfg.dailyLoss)flags.push('afterstop');
+    if(t.total&&(t.checked||[]).length<t.total)flags.push('plan');
+    dayR[t.date]=(dayR[t.date]||0)+(t.r||0);
+    const pending=t.source==='import';
+    return Object.assign({},t,{flags,pending,clean:!pending&&!flags.length&&!(t.mistakes||[]).length});
+  });
+}
+function stats(a){
+  const n=a.length,sum=a.reduce((x,t)=>x+t.r,0),w=a.filter(t=>t.r>0),l=a.filter(t=>t.r<0);
+  const gw=w.reduce((x,t)=>x+t.r,0),gl=-l.reduce((x,t)=>x+t.r,0);
+  let c=0,p=0,dd=0;a.forEach(t=>{c+=t.r;p=Math.max(p,c);dd=Math.max(dd,p-c)});
+  const cl=a.filter(t=>t.clean);
+  return{n,sum,win:n?w.length/n:0,exp:n?sum/n:0,pf:gl?gw/gl:(gw?Infinity:0),dd,clean:n?cl.length/n:0,cleanN:cl.length,cleanSum:cl.reduce((x,t)=>x+t.r,0),dirtySum:sum-cl.reduce((x,t)=>x+t.r,0),avgW:w.length?gw/w.length:0,avgL:l.length?gl/l.length:0};
+}
+function filtered(){
+  let a=analyse(store.trades);
+  if(ui.period){const lim=new Date();lim.setDate(lim.getDate()-ui.period);const k=dayKey(lim);a=a.filter(t=>t.date>=k)}
+  if(ui.setup)a=a.filter(t=>t.setup===ui.setup);
+  return a;
+}
+
+function renderTabs(){
+  $('tabs').innerHTML=TABS.map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${ui.tab===k}">${l}${(k==='learn'||k==='chat')&&!isPro()?'<span class="lock">🔒</span>':''}</button>`).join('');
+}
+function render(){
+  renderTabs();renderAcct();
+  ({dash:viewDash,new:viewNew,list:viewList,acc:viewAcc,rules:viewRules,learn:viewLearn,chat:viewChat,plan:viewPlan,login:viewLogin})[ui.tab]();
+}
+function demoBanner(){
+  return store.demo?`<div class="banner"><span><b>Примерни данни.</b> Това не са истински сделки. Първият ти запис или импорт ги изчиства сам. Правилата и сетъпите също са примерни, смени ги със своите в „Правила“.</span><button class="btn small" data-act="clear-demo">Започни на чисто</button></div>`:'';
+}
+
+function todayStatus(){
+  const c=store.cfg,now=new Date(),k=dayKey(now),m=now.getHours()*60+now.getMinutes();
+  const tr=store.trades.filter(t=>t.date===k),r=tr.reduce((x,t)=>x+t.r,0);
+  if(c.noDays.includes(now.getDay()))return['stop','✕',`Днес е ${DAYS[now.getDay()]}. По твоите правила не търгуваш.`];
+  if(tr.length&&r<=-c.dailyLoss)return['stop','✕',`Дневният стоп е достигнат (${fmtR(r)}). Край за днес.`];
+  if(tr.length>=c.maxTrades)return['stop','✕',`Използва ${tr.length} от ${c.maxTrades} сделки за днес. Край за днес.`];
+  if(m<toMin(c.start))return['wait','…',`Прозорецът отваря в ${c.start}. Подготви чек-листа.`];
+  if(m>toMin(c.end))return['wait','…',`Прозорецът затвори в ${c.end}. Запиши сесията, ако има какво.`];
+  return['good','✓',`Прозорецът е отворен до ${c.end}. Остават ${c.maxTrades-tr.length} от ${c.maxTrades} сделки.`];
+}
+
+function viewDash(){
+  const a=filtered(),s=stats(a),st=todayStatus();
+  const setups=[...new Set(store.trades.map(t=>t.setup).filter(Boolean))];
+  let top=costList(a).filter(c=>c.sum<0).sort((x,y)=>x.sum-y.sum)[0];
+  $('view').innerHTML=`${demoBanner()}
+  <div class="status ${st[0]}"><span class="dot">${st[1]}</span><span id="statusText">${esc(st[2])}</span></div>
+  <div class="filters">
+    <div class="seg" role="group" aria-label="Период">${[[30,'30 дни'],[90,'90 дни'],[0,'Всичко']].map(([v,l])=>`<button data-period="${v}" aria-pressed="${ui.period===v}">${l}</button>`).join('')}</div>
+    <select id="fSetup" aria-label="Сетъп" style="width:auto"><option value="">Всички сетъпи</option>${setups.map(x=>`<option${x===ui.setup?' selected':''}>${esc(x)}</option>`).join('')}</select>
+  </div>
+  ${a.length?`
+  <div class="sheet"><p class="insight">Чистите сделки носят <mark>${fmtR(s.cleanSum)}</mark>, а сделките с нарушения <mark>${fmtR(s.dirtySum)}</mark>.${top?` Най-скъпа грешка: ${esc(top.label)} (${fmtR(top.sum)}).`:''}</p></div>
+  <div class="kpis">
+    ${kpi('Чисти сделки',Math.round(s.clean*100)+'%',`${s.cleanN} от ${s.n} без нарушение`)}
+    ${kpi('Сбор',`<span class="${cls(s.sum)}">${fmtR(s.sum)}</span>`,s.n+' сделки')}
+    ${kpi('Очакване на сделка',`<span class="${cls(s.exp)}">${fmtR(s.exp)}</span>`,'средно R')}
+    ${kpi('Печеливши',Math.round(s.win*100)+'%',`средно ${fmtR(s.avgW)} / −${round(s.avgL)}R`)}
+    ${kpi('Profit factor',s.pf===Infinity?'∞':round(s.pf).toString(),'печалба / загуба')}
+    ${kpi('Макс. просадка','−'+round(s.dd)+'R','от връх до дъно')}
+  </div>
+  <div class="sheet"><h2>Крива на резултата в R</h2><p class="sub">Колко щеше да е кривата само с чистите сделки спрямо реалната ти.</p>
+    <div class="legend"><span><i style="border-color:var(--blue)"></i>Реално</span><span><i class="dash" style="border-color:var(--win)"></i>Само чисти сделки</span><span><i class="ring"></i>Сделка с нарушение</span></div>
+    <div class="chart" id="eq"></div></div>
+  <div class="grid2">
+    <div class="sheet"><h2>Какво ти струват грешките</h2><p class="sub">Сбор R на сделките с всяка грешка. Отчита се и автоматичната проверка.</p>${barList(costList(a).sort((x,y)=>x.sum-y.sum))}</div>
+    <div class="sheet"><h2>Календар</h2><p class="sub">Резултат по дни за последните 18 седмици.</p><div class="cal-scroll">${calendar()}</div></div>
+  </div>
+  <div class="grid3">
+    <div class="sheet"><h2>По сетъп</h2><p class="sub">${small(a)}</p>${barList(group(a,t=>t.setup||'Без сетъп'))}</div>
+    <div class="sheet"><h2>По час на входа</h2><p class="sub">${small(a)}</p>${barList(group(a,t=>t.time?t.time.slice(0,2)+':00':'Без час').sort((x,y)=>x.label.localeCompare(y.label)))}</div>
+    <div class="sheet"><h2>По ден</h2><p class="sub">${small(a)}</p>${barList(weekdays(a))}</div>
+  </div>
+  <div class="grid2">
+    <div class="sheet"><h2>Разпределение на резултатите</h2><p class="sub">Колко сделки попадат във всеки диапазон в R.</p>${histogram(a)}</div>
+    <div class="sheet"><h2>Емоция при вход</h2><p class="sub">Сбор R според това как си се чувствал.</p>${barList(group(a,t=>t.emotion||'Не е записана'))}</div>
+  </div>`:`<div class="sheet empty">Няма сделки за този период. Смени периода или запиши сделка от „Нова сделка“.</div>`}`;
+  if(a.length)equity(a);
+}
+const kpi=(l,v,h)=>`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="h">${h}</div></div>`;
+const small=a=>a.length<20?'Под 20 сделки: гледай това като насока, не като извод.':'Сбор R и брой сделки.';
+function costList(a){
+  const out=[];
+  Object.entries(MISTAKES).forEach(([k,l])=>{const x=a.filter(t=>(t.mistakes||[]).includes(k));if(x.length)out.push({label:l,n:x.length,sum:x.reduce((s,t)=>s+t.r,0)})});
+  Object.entries(FLAGS).forEach(([k,l])=>{const x=a.filter(t=>t.flags.includes(k));if(x.length)out.push({label:l,n:x.length,sum:x.reduce((s,t)=>s+t.r,0)})});
+  return out;
+}
+function group(a,fn){const m={};a.forEach(t=>{const k=fn(t);(m[k]=m[k]||{label:k,n:0,sum:0});m[k].n++;m[k].sum+=t.r});return Object.values(m).sort((x,y)=>y.sum-x.sum)}
+function weekdays(a){return [1,2,3,4,5].map(d=>{const x=a.filter(t=>parseDay(t.date).getDay()===d);return{label:DAYS[d],n:x.length,sum:x.reduce((s,t)=>s+t.r,0)}}).filter(x=>x.n)}
+function barList(items){
+  if(!items.length)return '<div class="empty">Няма нарушения за този период.</div>';
+  const max=Math.max(...items.map(i=>Math.abs(i.sum)),.01);
+  return '<div class="bars">'+items.map(i=>{const w=Math.abs(i.sum)/max*50;const tip=`${i.label}\n${i.n} сделки, сбор ${fmtR(i.sum)}\nсредно ${fmtR(i.sum/i.n)}`;
+    return `<div class="bar" data-tip="${esc(tip)}"><span class="n">${esc(i.label)}<small>${i.n}</small></span><span class="t"><span class="f ${i.sum<0?'neg':'pos'}" style="width:${w}%"></span></span><span class="x ${cls(i.sum)}">${fmtR(i.sum)}</span></div>`}).join('')+'</div>';
+}
+function calendar(){
+  const by={};analyse(store.trades).forEach(t=>{const d=by[t.date]=by[t.date]||{r:0,n:0,bad:0};d.r+=t.r;d.n++;if(!t.clean)d.bad++});
+  const now=new Date(),start=new Date(now);start.setDate(now.getDate()-((now.getDay()+6)%7)-17*7);
+  const max=Math.max(...Object.values(by).map(d=>Math.abs(d.r)),1);
+  let h='<div class="side"></div>'+['П','','С','','П','','Н'].map(x=>`<div class="side">${x}</div>`).join('');
+  let last=-1;
+  for(let w=0;w<18;w++){
+    const first=new Date(start);first.setDate(start.getDate()+w*7);
+    const label=first.getMonth()!==last?first.toLocaleDateString('bg-BG',{month:'short'}).replace('.',''):'';last=first.getMonth();
+    h+=`<div class="head">${esc(label)}</div>`;
+    for(let i=0;i<7;i++){
+      const d=new Date(first);d.setDate(first.getDate()+i);const k=dayKey(d),v=by[k];
+      if(d>now){h+='<div style="background:none"></div>';continue}
+      if(!v){h+=`<div data-tip="${bgDate(k)}\nБез сделки"></div>`;continue}
+      const pct=Math.round(30+Math.abs(v.r)/max*70),c=v.r>=0?'var(--win)':'var(--loss)';
+      h+=`<div style="background:color-mix(in srgb,${c} ${pct}%,var(--cell))" data-tip="${bgDate(k)} (${DAYS[d.getDay()]})\n${v.n} сделки, ${fmtR(v.r)}${v.bad?'\nС нарушения: '+v.bad:''}"></div>`;
+    }
+  }
+  return `<div class="cal">${h}</div>`;
+}
+function histogram(a){
+  const edges=[-3,-2,-1.5,-1,-.5,0,.5,1,1.5,2,3,99],bins=edges.slice(0,-1).map((e,i)=>({lo:e,hi:edges[i+1],n:0}));
+  a.forEach(t=>{const b=bins.find(x=>t.r>=x.lo&&t.r<x.hi)||(t.r<-3?bins[0]:null);if(b)b.n++});
+  const max=Math.max(...bins.map(b=>b.n),1);
+  const lab=b=>b.hi===99?'3+':(b.lo>0?'+':b.lo<0?'−':'')+Math.abs(b.lo);
+  return `<div class="hist">${bins.map(b=>`<div style="height:${b.n/max*100}%;background:${b.lo<0?'var(--loss)':'var(--win)'}" data-tip="От ${b.lo}R${b.hi===99?' нагоре':' до '+b.hi+'R'}\n${b.n} сделки"></div>`).join('')}</div><div class="histx">${bins.map(b=>`<span>${lab(b)}</span>`).join('')}</div>`;
+}
+function ticksFor(lo,hi){
+  const span=(hi-lo)||1,raw=span/4,mag=10**Math.floor(Math.log10(raw)),f=raw/mag,step=(f<1.5?1:f<3?2:f<7?5:10)*mag;
+  const out=[];for(let v=Math.ceil(lo/step)*step;v<=hi+1e-9;v+=step)out.push(round(v,4));return out;
+}
+function equity(a){
+  const box=$('eq');if(!box)return;
+  const W=Math.max(box.clientWidth,300),H=W<520?230:270,L=38,R=W<520?14:112,T=10,B=26;
+  let c=0,g=0;const pts=[{i:0,c:0,g:0,t:null}];
+  a.forEach((t,i)=>{c+=t.r;if(t.clean)g+=t.r;pts.push({i:i+1,c,g,t})});
+  const vals=pts.flatMap(p=>[p.c,p.g]),lo=Math.min(...vals,0),hi=Math.max(...vals,0),pad_=(hi-lo)*.08||1;
+  const y0=lo-pad_,y1=hi+pad_,X=i=>L+(W-L-R)*i/Math.max(pts.length-1,1),Y=v=>T+(H-T-B)*(1-(v-y0)/(y1-y0));
+  const line=k=>pts.map((p,i)=>(i?'L':'M')+X(p.i).toFixed(1)+' '+Y(p[k]).toFixed(1)).join('');
+  const ticks=ticksFor(y0,y1);
+  let ly1=Y(c),ly2=Y(g);if(Math.abs(ly1-ly2)<16){if(ly1<ly2)ly2=ly1+16;else ly1=ly2+16}
+  const xStep=Math.max(1,Math.ceil(pts.length/(W<520?4:7)));
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Крива на резултата: реално ${fmtR(c)}, само чисти сделки ${fmtR(g)}">
+    ${ticks.map(v=>`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--rule)" ${v===0?'stroke-width="1.5"':'stroke-dasharray="2 4"'}/><text x="${L-6}" y="${Y(v)+4}" text-anchor="end">${v}</text>`).join('')}
+    ${pts.filter(p=>p.t&&p.i%xStep===0).map(p=>`<text x="${X(p.i)}" y="${H-7}" text-anchor="middle">${bgDate(p.t.date).slice(0,5)}</text>`).join('')}
+    <path d="${line('g')}" fill="none" stroke="var(--win)" stroke-width="2" stroke-dasharray="5 4"/>
+    <path d="${line('c')}" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linejoin="round"/>
+    ${pts.filter(p=>p.t&&!p.t.clean).map(p=>`<circle cx="${X(p.i)}" cy="${Y(p.c)}" r="3.5" fill="var(--sheet)" stroke="var(--loss)" stroke-width="2"/>`).join('')}
+    ${W>=520?`<text class="end" x="${W-R+8}" y="${ly1+4}">Реално ${fmtR(c)}</text><text class="end" x="${W-R+8}" y="${ly2+4}">Чисти ${fmtR(g)}</text>`:''}
+    <line id="cross" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="var(--muted)" visibility="hidden"/>
+    <rect id="eqHit" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/>
+  </svg>`;
+  const hit=$('eqHit'),cross=$('cross'),svg=box.querySelector('svg');
+  const move=e=>{
+    const rc=svg.getBoundingClientRect(),x=(e.clientX-rc.left)*W/rc.width;
+    const i=Math.min(pts.length-1,Math.max(1,Math.round((x-L)/(W-L-R)*(pts.length-1)))),p=pts[i];if(!p||!p.t)return;
+    cross.setAttribute('x1',X(i));cross.setAttribute('x2',X(i));cross.setAttribute('visibility','visible');
+    const bad=[...(p.t.mistakes||[]).map(k=>MISTAKES[k]),...p.t.flags.map(k=>FLAGS[k])];
+    showTip(`${bgDate(p.t.date)} ${p.t.time||''}\n${p.t.setup||''}\nСделка ${fmtR(p.t.r)}, общо ${fmtR(p.c)}${bad.length?'\nНарушения: '+bad.join(', '):p.t.pending?'\nЗа преглед':'\nЧиста сделка'}`,e.clientX,e.clientY);
+  };
+  hit.addEventListener('pointermove',move);hit.addEventListener('pointerdown',move);
+  hit.addEventListener('pointerleave',()=>{cross.setAttribute('visibility','hidden');hideTip()});
+}
+
+/* Нова сделка */
+function blankForm(){const n=new Date();return{id:null,date:dayKey(n),time:pad(n.getHours())+':'+pad(n.getMinutes()),symbol:'NQ',dir:'long',setup:store.cfg.setups[0]||'',qty:1,entry:'',stop:'',exit:'',r:'',mistakes:[],checked:[],emotion:'',note:''}}
+function viewNew(){
+  const f=ui.form=ui.form||blankForm(),c=store.cfg;
+  $('view').innerHTML=`${demoBanner()}<div class="form-layout"><div class="sheet"><h2>${f.id?'Редакция на сделка':'Нова сделка'}</h2><p class="sub">Попълни цените и R се сметне само. Ако нямаш цени, напиши R директно.</p>
+    <div class="fields">
+      <label class="f">Дата<input type="date" id="f_date" value="${f.date}"></label>
+      <label class="f">Час на входа<input type="time" id="f_time" value="${f.time}"></label>
+      <label class="f">Инструмент<input id="f_symbol" list="syms" value="${esc(f.symbol)}"><datalist id="syms">${Object.keys(POINT).map(s=>`<option>${s}</option>`).join('')}</datalist></label>
+      <label class="f">Договори<input id="f_qty" inputmode="decimal" value="${esc(f.qty)}"></label>
+    </div>
+    <div class="group"><span class="t">Посока</span><div class="seg"><button data-dir="long" aria-pressed="${f.dir==='long'}">Long</button><button data-dir="short" aria-pressed="${f.dir==='short'}">Short</button></div></div>
+    <div class="group fields">
+      <label class="f">Вход<input id="f_entry" inputmode="decimal" value="${esc(f.entry)}"></label>
+      <label class="f">Стоп<input id="f_stop" inputmode="decimal" value="${esc(f.stop)}"></label>
+      <label class="f">Изход<input id="f_exit" inputmode="decimal" value="${esc(f.exit)}"></label>
+      <label class="f">Или R директно<input id="f_r" inputmode="decimal" value="${esc(f.r)}"></label>
+    </div>
+    <div class="group"><label class="f">Сетъп<select id="f_setup">${[...new Set([...c.setups,f.setup].filter(Boolean))].map(s=>`<option${s===f.setup?' selected':''}>${esc(s)}</option>`).join('')}</select></label>
+      <div class="row" style="margin-top:8px"><input id="newSetup" aria-label="Име на нов сетъп" placeholder="Нов сетъп" style="flex:1 1 160px;min-width:0;width:auto"><button type="button" class="btn" data-act="add-setup">Добави</button></div></div>
+    <div class="group"><span class="t">Чек-лист преди входа</span><div class="ticks">${c.checklist.map(x=>`<button type="button" class="tick" data-check="${esc(x)}" aria-pressed="${f.checked.includes(x)}">${esc(x)}</button>`).join('')}</div></div>
+    <div class="group"><span class="t">Грешки в тази сделка</span><div class="ticks">${Object.entries(MISTAKES).map(([k,l])=>`<button type="button" class="tick bad" data-mistake="${k}" aria-pressed="${f.mistakes.includes(k)}">${l}</button>`).join('')}</div></div>
+    <div class="group"><span class="t">Как се чувстваше при входа</span><div class="ticks">${EMOTIONS.map(x=>`<button type="button" class="tick" data-emotion="${x}" aria-pressed="${f.emotion===x}">${x}</button>`).join('')}</div></div>
+    <div class="group"><label class="f">Бележка<textarea id="f_note" placeholder="Какво видя, какво направи, какво ще промениш">${esc(f.note)}</textarea></label></div>
+    <div class="group row"><button class="btn pri" data-act="save-trade">${f.id?'Запази промените':'Запиши сделката'}</button>${f.id?'<button class="btn" data-act="cancel-edit">Отказ</button>':''}</div>
+  </div><aside class="sheet preview" id="preview"></aside></div>`;
+  updatePreview();
+}
+function readForm(){
+  const f=ui.form;['date','time','symbol','qty','entry','stop','exit','r','setup','note'].forEach(k=>{const e=$('f_'+k);if(e)f[k]=e.value});return f;
+}
+function calcTrade(f){
+  const en=num(f.entry),st=num(f.stop),ex=num(f.exit),qty=num(f.qty)||1,sign=f.dir==='long'?1:-1;
+  let r=null,pnl=null;const pv=POINT[String(f.symbol).trim().toUpperCase()];
+  if(en!=null&&st!=null&&ex!=null&&en!==st){r=round(sign*(ex-en)/Math.abs(en-st));if(pv)pnl=round(sign*(ex-en)*pv*qty,2)}
+  const manual=num(f.r);if(manual!=null)r=manual;
+  if(r!=null&&pnl==null)pnl=round(r*store.cfg.rValue,2);
+  return{r,pnl};
+}
+function updatePreview(){
+  const box=$('preview');if(!box)return;
+  const f=readForm(),{r,pnl}=calcTrade(f),c=store.cfg;
+  const others=store.demo?[]:store.trades.filter(t=>t.id!==f.id);
+  const probe=analyse([...others,{id:'__p',date:f.date,time:f.time,r:r||0,mistakes:f.mistakes,checked:f.checked,total:c.checklist.length}]).find(t=>t.id==='__p');
+  const lines=Object.entries(FLAGS).map(([k,l])=>{const bad=probe.flags.includes(k);const ok={day:'Разрешен ден',window:`В прозореца ${c.start}–${c.end}`,over:`До ${c.maxTrades} сделки за деня`,afterstop:'Преди дневния стоп',plan:'Чек-листът е пълен'}[k];return `<div class="check ${bad?'no':'ok'}"><b>${bad?'✕':'✓'}</b>${bad?l:ok}</div>`});
+  (f.mistakes||[]).forEach(k=>lines.push(`<div class="check no"><b>✕</b>${MISTAKES[k]}</div>`));
+  box.innerHTML=`<h2>Резултат</h2><div class="bigR ${r==null?'':cls(r)}" style="margin:6px 0 2px">${r==null?'–':fmtR(r)}</div><div style="color:var(--muted);font-size:13px;margin-bottom:12px">${pnl==null?'Въведи цени или R':fmtM(pnl)}</div>
+  <h2>Автоматична проверка</h2><p class="sub" style="margin-bottom:6px">${probe.clean?'Чиста сделка.':'Сделката ще се брои с нарушение.'}</p>${lines.join('')}`;
+}
+
+/* Сделки и импорт */
+function viewList(){
+  const a=analyse(store.trades).reverse();
+  $('view').innerHTML=`${demoBanner()}<div class="sheet"><div class="row" style="justify-content:space-between"><div><h2>Импорт от платформата</h2><p class="sub" style="margin:0">Качи CSV отчет с изпълнени сделки, например Performance от Tradovate. Повторенията се пропускат сами.</p></div>
+    <label class="btn" for="csvFile">Избери CSV файл</label><input type="file" id="csvFile" accept=".csv,text/csv" hidden></div><p id="importMsg" class="sub" style="margin:8px 0 0"></p></div>
+  <div class="sheet"><h2>Всички сделки (${a.length})</h2><p class="sub">Импортираните сделки нямат чек-лист и грешки, затова не се броят за чисти, докато не ги отвориш с „Редакция“ и не ги запазиш с тикчетата.</p>
+  ${a.length?`<div class="tablewrap"><table><thead><tr><th>Дата</th><th>Час</th><th>Инструмент</th><th>Посока</th><th>Сетъп</th><th class="num">R</th><th class="num">Сума</th><th>Проверка</th><th></th></tr></thead><tbody>
+  ${a.map(t=>{const bad=[...(t.mistakes||[]).map(k=>MISTAKES[k]),...t.flags.map(k=>FLAGS[k])];return `<tr><td>${bgDate(t.date)}</td><td>${esc(t.time||'')}</td><td>${esc(t.symbol||'')}</td><td>${t.dir==='short'?'Short':'Long'}</td><td>${esc(t.setup||'')}</td><td class="num ${cls(t.r)}"><b>${fmtR(t.r)}</b></td><td class="num">${t.pnl==null?'':fmtM(t.pnl)}</td><td>${t.pending?'<span class="pill" style="background:var(--warn-soft);color:var(--warn)">За преглед</span>':''}${bad.map(x=>`<span class="pill">${esc(x)}</span>`).join('')}${t.clean?'<span class="pill ok">Чиста</span>':''}</td><td><button class="btn small" data-coach="${esc(t.id)}">Разбор${isPro()?'':' 🔒'}</button> <button class="btn small" data-edit="${esc(t.id)}">Редакция</button> <button class="btn small danger" data-del="${esc(t.id)}">Изтрий</button></td></tr>`}).join('')}
+  </tbody></table></div>`:'<div class="empty">Още няма сделки.</div>'}</div>`;
+}
+function parseCsv(text){
+  text=text.replace(/^﻿/,'');
+  const head=text.split(/\r?\n/)[0]||'';const delim=[';','\t',','].sort((a,b)=>head.split(b).length-head.split(a).length)[0];
+  const rows=[];let row=[],cell='',q=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];
+    if(q){if(ch==='"'&&text[i+1]==='"'){cell+='"';i++}else if(ch==='"')q=false;else cell+=ch}
+    else if(ch==='"')q=true;else if(ch===delim){row.push(cell);cell=''}
+    else if(ch==='\n'){row.push(cell.replace(/\r$/,''));rows.push(row);row=[];cell=''}else cell+=ch}
+  if(cell||row.length){row.push(cell);rows.push(row)}
+  return rows.filter(r=>r.some(c=>c.trim()));
+}
+function parseStamp(s){
+  if(!s)return null;s=s.trim();let m;
+  if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2}))?/)))return{date:`${m[1]}-${pad(m[2])}-${pad(m[3])}`,time:m[4]?pad(m[4])+':'+m[5]:'',ms:+new Date(+m[1],+m[2]-1,+m[3],+(m[4]||0),+(m[5]||0),+((s.match(/:(\d{2}):(\d{2})/)||[])[2]||0))};
+  if((m=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[ ,]+(\d{1,2}):(\d{2}))?/)))return{date:`${m[3]}-${pad(m[2])}-${pad(m[1])}`,time:m[4]?pad(m[4])+':'+m[5]:'',ms:+new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0))};
+  if((m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?/i))){let h=+(m[4]||0);if(/pm/i.test(m[7]||'')&&h<12)h+=12;if(/am/i.test(m[7]||'')&&h===12)h=0;return{date:`${m[3]}-${pad(m[1])}-${pad(m[2])}`,time:m[4]?pad(h)+':'+m[5]:'',ms:+new Date(+m[3],+m[1]-1,+m[2],h,+m[5]||0,+(m[6]||0))}}
+  return null;
+}
+const money=s=>{if(s==null||s==='')return null;s=String(s).trim();const neg=/[(\-−]/.test(s);const n=parseFloat(s.replace(/[^0-9.,]/g,'').replace(/,(?=\d{3}\b)/g,'').replace(',','.'));return isFinite(n)?(neg?-n:n):null};
+function importCsv(text){
+  const rows=parseCsv(text);if(rows.length<2)return{err:'Файлът е празен или няма редове със сделки.'};
+  const h=rows[0].map(x=>x.trim().toLowerCase().replace(/[\s_&]+/g,''));
+  const col=(...n)=>{for(const x of n){const i=h.indexOf(x);if(i>=0)return i}return -1};
+  const c={sym:col('symbol','contract','instrument','инструмент','product'),qty:col('qty','quantity','paircount','договори'),buyP:col('buyprice'),sellP:col('sellprice'),pnl:col('pnl','profit','netpnl','netprofit','realizedpnl','сума'),r:col('r','резултатr','резултат(r)'),bT:col('boughttimestamp','entrytime','entrydate','opentime'),sT:col('soldtimestamp','exittime','exitdate','closetime'),date:col('date','дата','tradedate'),time:col('time','час'),dir:col('direction','side','посока','markettype'),setup:col('setup','сетъп'),note:col('note','бележка')};
+  if(c.pnl<0&&c.r<0)return{err:'Не намерих колона с резултат (pnl, profit или R). Провери дали това е отчет със затворени сделки.'};
+  if(c.bT<0&&c.sT<0&&c.date<0)return{err:'Не намерих колона с дата. Провери дали това е отчет със затворени сделки.'};
+  const seen=new Set(store.demo?[]:store.trades.map(t=>[t.date,t.time,t.symbol,t.r].join('|')));
+  let added=0,skipped=0,bad=0;const fresh=[];
+  rows.slice(1).forEach((r,i)=>{
+    const a=c.bT>=0?parseStamp(r[c.bT]):null,b=c.sT>=0?parseStamp(r[c.sT]):null;
+    let when=(a&&b)?(a.ms<=b.ms?a:b):(a||b);
+    if(!when&&c.date>=0){when=parseStamp(r[c.date]+(c.time>=0&&r[c.time]?' '+r[c.time]:''))}
+    const pnl=c.pnl>=0?money(r[c.pnl]):null,direct=c.r>=0?num(String(r[c.r]).replace('−','-')):null;
+    if(!when||(pnl==null&&direct==null)){bad++;return}
+    const rr=direct!=null?direct:round(pnl/store.cfg.rValue);
+    let dir='long';if(a&&b)dir=a.ms<=b.ms?'long':'short';else if(c.dir>=0&&/short|sell/i.test(r[c.dir]))dir='short';
+    const sym=c.sym>=0?String(r[c.sym]).trim().replace(/[A-Z]\d{1,2}$/,''):'';
+    const key=[when.date,when.time,sym,rr].join('|');if(seen.has(key)){skipped++;return}seen.add(key);
+    fresh.push({id:'i'+Date.now()+'_'+i,date:when.date,time:when.time,symbol:sym,dir,setup:c.setup>=0?r[c.setup]:'',qty:c.qty>=0?num(r[c.qty]):null,entry:c.buyP>=0&&dir==='long'?num(r[c.buyP]):c.sellP>=0?num(r[c.sellP]):null,stop:null,exit:c.sellP>=0&&dir==='long'?num(r[c.sellP]):c.buyP>=0?num(r[c.buyP]):null,r:rr,pnl:pnl!=null?pnl:round(rr*store.cfg.rValue,2),mistakes:[],checked:[],total:0,emotion:'',note:c.note>=0?r[c.note]:'',source:'import'});
+    added++;
+  });
+  if(added){if(store.demo){store.demo=false;store.trades=[]}store.trades.push(...fresh);save()}
+  return{added,skipped,bad};
+}
+
+/* Акаунт */
+function viewAcc(){
+  const A=store.cfg.acc,a=analyse(store.trades);
+  let bal=A.size,peak=A.size;a.forEach(t=>{bal+=t.pnl||0;peak=Math.max(peak,bal)});
+  const limit=A.type==='trailing'?peak-A.dd:A.size-A.dd,room=bal-limit,profit=bal-A.size,left=Math.max(A.target-profit,0),pr=Math.max(0,Math.min(1,profit/A.target)),rm=Math.max(0,Math.min(1,room/A.dd));
+  const s=stats(a),trades=s.exp>0&&left>0?Math.ceil(left/store.cfg.rValue/s.exp):null;
+  $('view').innerHTML=`${demoBanner()}<div class="grid2">
+  <div class="sheet"><h2>${esc(A.name)}</h2><p class="sub">Смята се от записаните сделки и настройките вдясно.</p>
+    <div class="kpis" style="margin-bottom:14px">${kpi('Баланс',fmtM(bal),'старт '+fmtM(A.size))}${kpi('Печалба',`<span class="${cls(profit)}">${fmtM(profit)}</span>`,fmtR(profit/store.cfg.rValue))}${kpi('До просадката',fmtM(room),'граница '+fmtM(limit))}</div>
+    <div><b>Път до целта</b><div class="prog"><i style="width:${pr*100}%;background:var(--blue)"></i></div><div class="sub" style="color:var(--muted);font-size:13px">${Math.round(pr*100)}% от ${fmtM(A.target)}. Остават ${fmtM(left)}, или ${round(left/store.cfg.rValue,1)}R.${trades?` При сегашното ти очакване това са около ${trades} сделки.`:''}</div></div>
+    <div style="margin-top:14px"><b>Въздух до просадката</b><div class="prog"><i style="width:${rm*100}%;background:${rm<.3?'var(--loss)':rm<.6?'var(--warn)':'var(--win)'}"></i></div><div style="color:var(--muted);font-size:13px">${round(room/store.cfg.rValue,1)}R до границата. ${rm<.3?'Малко въздух: намали риска или спри и прегледай сделките.':''}</div></div>
+    <p class="sub" style="margin:14px 0 0">Сметката е от затворените сделки. Prop фирмите често следят и незатворената печалба и правилата им се сменят, така че официалният им дашборд винаги е водещ.</p></div>
+  <div class="sheet"><h2>Настройки на акаунта</h2><p class="sub">Сложи стойностите от условията на твоя акаунт.</p><div class="fields">
+    <label class="f">Име<input id="a_name" value="${esc(A.name)}"></label><label class="f">Размер ($)<input id="a_size" inputmode="numeric" value="${A.size}"></label>
+    <label class="f">Цел за печалба ($)<input id="a_target" inputmode="numeric" value="${A.target}"></label><label class="f">Макс. просадка ($)<input id="a_dd" inputmode="numeric" value="${A.dd}"></label>
+    <label class="f">Вид просадка<select id="a_type"><option value="trailing"${A.type==='trailing'?' selected':''}>Трейлинг</option><option value="static"${A.type==='static'?' selected':''}>Статична</option></select></label></div>
+    <div class="group"><button class="btn pri" data-act="save-acc">Запази</button></div></div></div>`;
+}
+
+/* Правила */
+function viewRules(){
+  const c=store.cfg;
+  $('view').innerHTML=`${demoBanner()}<div class="grid2"><div class="sheet"><h2>Твоите правила</h2><p class="sub">Всяка сделка се проверява автоматично спрямо тях.</p><div class="fields">
+    <label class="f">Прозорец от<input type="time" id="r_start" value="${c.start}"></label><label class="f">Прозорец до<input type="time" id="r_end" value="${c.end}"></label>
+    <label class="f">Макс. сделки на ден<input id="r_max" inputmode="numeric" value="${c.maxTrades}"></label><label class="f">Дневен стоп (R)<input id="r_loss" inputmode="decimal" value="${c.dailyLoss}"></label>
+    <label class="f">1R в долари<input id="r_val" inputmode="decimal" value="${c.rValue}"></label></div>
+    <div class="group"><span class="t">Дни, в които не търгувам</span><div class="ticks">${[1,2,3,4,5].map(d=>`<button type="button" class="tick bad" data-noday="${d}" aria-pressed="${c.noDays.includes(d)}">${DAYS[d]}</button>`).join('')}</div></div>
+    <div class="group"><label class="f">Сетъпи (по един на ред)<textarea id="r_setups">${esc(c.setups.join('\n'))}</textarea></label></div>
+    <div class="group"><label class="f">Чек-лист преди вход (по едно на ред)<textarea id="r_check" style="min-height:120px">${esc(c.checklist.join('\n'))}</textarea></label></div>
+    <div class="group"><button class="btn pri" data-act="save-rules">Запази правилата</button></div></div>
+  <div class="sheet"><h2>Резервно копие</h2><p class="sub">Данните стоят само в този браузър. Ако изчистиш историята му, се губят, затова пази копие веднъж седмично.</p>
+    <div class="row"><button class="btn" data-act="export-json">Резервно копие</button><button class="btn" data-act="export-csv">Експорт в CSV</button><label class="btn" for="jsonFile">Възстанови от копие</label><input type="file" id="jsonFile" accept=".json,application/json" hidden></div>
+    <div class="group" id="wipeBox"><button class="btn danger" data-act="wipe">Изтрий всички сделки</button></div></div></div>`;
+}
+
+function showModal(title,text,name,type){
+  const url=URL.createObjectURL(new Blob([text],{type}));
+  $('modal').hidden=false;
+  $('modal').innerHTML=`<div class="sheet"><h2>${title}</h2><p class="sub">Свали файла или копирай текста и го запази сам.</p><textarea id="mText" readonly>${esc(text)}</textarea><div class="row" style="margin-top:10px"><a class="btn pri" href="${url}" download="${name}" style="text-decoration:none">Свали файла</a><button class="btn" data-act="copy">Копирай</button><button class="btn" data-act="close-modal">Затвори</button></div></div>`;
+}
+function toast(m){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,3200)}
+function showTip(text,x,y){const t=$('tip');t.textContent=text;t.hidden=false;const r=t.getBoundingClientRect();t.style.left=Math.max(6,Math.min(innerWidth-r.width-6,x+12))+'px';t.style.top=Math.max(6,y-r.height-10)+'px'}
+function hideTip(){$('tip').hidden=true}
+
+document.addEventListener('pointerover',e=>{const x=e.target.closest&&e.target.closest('[data-tip]');if(x)showTip(x.dataset.tip,e.clientX,e.clientY);else if(!e.target.closest||e.target.id!=='eqHit')hideTip()});
+document.addEventListener('input',e=>{if(e.target.id&&e.target.id.startsWith('f_'))updatePreview()});
+document.addEventListener('change',e=>{
+  const id=e.target.id;
+  if(id==='fSetup'){ui.setup=e.target.value;render()}
+  if(id==='csvFile'&&e.target.files[0]){const rd=new FileReader();rd.onload=()=>{const res=importCsv(String(rd.result));ui.tab='list';render();const m=$('importMsg');m.textContent=res.err||`Добавени: ${res.added}. Вече записани: ${res.skipped}. Неразчетени редове: ${res.bad}. R е сметнат от 1R = $${store.cfg.rValue}.`;m.style.color=res.err?'var(--loss)':'var(--win)'};rd.readAsText(e.target.files[0])}
+  if(id==='jsonFile'&&e.target.files[0]){const rd=new FileReader();rd.onload=()=>{try{const d=JSON.parse(String(rd.result));if(!Array.isArray(d.trades))throw 0;store={demo:false,trades:d.trades,cfg:Object.assign(clone(DEFAULTS),d.cfg||{})};save();render();toast('Копието е възстановено: '+d.trades.length+' сделки.')}catch(err){toast('Този файл не е резервно копие на дневника.')}};rd.readAsText(e.target.files[0])}
+});
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button,[data-act]');if(!b)return;const d=b.dataset;
+  if(d.tab){ui.tab=d.tab;if(d.tab==='new'&&!ui.form)ui.form=blankForm();render();scrollTo(0,0);return}
+  if(d.period!==undefined){ui.period=+d.period;render();return}
+  if(d.dir){readForm();ui.form.dir=d.dir;viewNew();return}
+  if(d.check!==undefined){readForm();toggle(ui.form.checked,d.check);b.setAttribute('aria-pressed',ui.form.checked.includes(d.check));updatePreview();return}
+  if(d.mistake){readForm();toggle(ui.form.mistakes,d.mistake);b.setAttribute('aria-pressed',ui.form.mistakes.includes(d.mistake));updatePreview();return}
+  if(d.emotion){readForm();ui.form.emotion=ui.form.emotion===d.emotion?'':d.emotion;viewNew();return}
+  if(d.noday){const n=+d.noday;toggle(store.cfg.noDays,n);b.setAttribute('aria-pressed',store.cfg.noDays.includes(n));return}
+  if(d.edit){const t=store.trades.find(x=>x.id===d.edit);if(t){ui.form=Object.assign(blankForm(),clone(t),{entry:t.entry??'',stop:t.stop??'',exit:t.exit??'',r:t.entry!=null&&t.exit!=null&&t.stop!=null?'':t.r,qty:t.qty??1,checked:t.checked||[],mistakes:t.mistakes||[]});ui.tab='new';render();scrollTo(0,0)}return}
+  if(d.del){if(b.dataset.armed){store.trades=store.trades.filter(x=>x.id!==d.del);save();render();toast('Сделката е изтрита.')}else{b.dataset.armed=1;b.textContent='Сигурен ли си?'}return}
+  switch(d.act){
+    case 'clear-demo':store={demo:false,trades:[],cfg:store.cfg};save();render();toast('Примерните данни са изчистени.');break;
+    case 'save-trade':saveTrade();break;
+    case 'add-setup':addSetup();break;
+    case 'cancel-edit':ui.form=null;ui.tab='list';render();break;
+    case 'save-acc':store.cfg.acc={name:$('a_name').value.trim()||'Акаунт',size:num($('a_size').value)||0,target:num($('a_target').value)||1,dd:num($('a_dd').value)||1,type:$('a_type').value};save();render();toast('Акаунтът е запазен.');break;
+    case 'save-rules':saveRules();break;
+    case 'export-json':showModal('Резервно копие',JSON.stringify({trades:store.demo?[]:store.trades,cfg:store.cfg},null,1),'dnevnik-kopie.json','application/json');break;
+    case 'export-csv':showModal('Експорт в CSV',toCsv(),'dnevnik.csv','text/csv');break;
+    case 'copy':{const tx=$('mText');const done=()=>toast('Копирано.');try{navigator.clipboard.writeText(tx.value).then(done,()=>{tx.select()})}catch(err){tx.select()}break}
+    case 'close-modal':$('modal').hidden=true;$('modal').innerHTML='';break;
+    case 'wipe':$('wipeBox').innerHTML='<div class="row"><span>Това ще изтрие всички сделки от този браузър.</span><button class="btn danger" data-act="wipe-yes">Да, изтрий ги</button><button class="btn" data-act="wipe-no">Отказ</button></div>';break;
+    case 'wipe-yes':store={demo:false,trades:[],cfg:store.cfg};save();render();toast('Всички сделки са изтрити.');break;
+    case 'wipe-no':render();break;
+    default:if(d.act)cloudAct(d.act,b);else if(d.coach)showCoach(d.coach);
+  }
+});
+document.addEventListener('keydown',e=>{if(e.target.id==='newSetup'&&e.key==='Enter'){e.preventDefault();addSetup()}});
+function toggle(arr,v){const i=arr.indexOf(v);if(i>=0)arr.splice(i,1);else arr.push(v)}
+function addSetup(){
+  const e=$('newSetup'),name=e.value.trim();
+  if(!name){toast('Напиши име на сетъпа.');e.focus();return}
+  const have=store.cfg.setups.find(s=>s.toLowerCase()===name.toLowerCase());
+  if(!have)store.cfg.setups.push(name);
+  readForm();ui.form.setup=have||name;save();viewNew();
+  toast(have?'Този сетъп вече го има и е избран.':'Сетъпът е добавен и избран.');
+}
+function saveTrade(){
+  const f=readForm(),{r,pnl}=calcTrade(f);
+  if(!f.date){toast('Избери дата.');return}
+  if(r==null){toast('Въведи вход, стоп и изход или напиши R директно.');return}
+  const wasDemo=store.demo;if(wasDemo){store.demo=false;store.trades=[]}
+  const rec={id:f.id||'t'+Date.now(),date:f.date,time:f.time,symbol:String(f.symbol).trim().toUpperCase(),dir:f.dir,setup:f.setup,qty:num(f.qty),entry:num(f.entry),stop:num(f.stop),exit:num(f.exit),r,pnl,mistakes:f.mistakes.slice(),checked:f.checked.slice(),total:store.cfg.checklist.length,emotion:f.emotion,note:f.note,source:'manual'};
+  const i=store.trades.findIndex(t=>t.id===rec.id);if(i>=0)store.trades[i]=rec;else store.trades.push(rec);
+  save();const edited=!!f.id;ui.form=null;ui.tab='dash';render();scrollTo(0,0);
+  toast((edited?'Промените са запазени: ':'Записано: ')+fmtR(r)+(wasDemo?'. Примерните данни са изчистени.':''));
+}
+function saveRules(){
+  const c=store.cfg;c.start=$('r_start').value||c.start;c.end=$('r_end').value||c.end;c.maxTrades=Math.max(1,num($('r_max').value)||1);c.dailyLoss=num($('r_loss').value)||1;c.rValue=num($('r_val').value)||1;
+  const lines=v=>v.split('\n').map(x=>x.trim()).filter(Boolean);c.setups=lines($('r_setups').value);c.checklist=lines($('r_check').value);ui.form=null;save();render();toast('Правилата са запазени.');
+}
+function toCsv(){
+  const q=v=>{v=v==null?'':String(v);return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+  const head=['дата','час','инструмент','посока','сетъп','договори','вход','стоп','изход','r','сума','грешки','чек-лист','емоция','бележка'];
+  const rows=(store.demo?[]:analyse(store.trades)).map(t=>[t.date,t.time,t.symbol,t.dir,t.setup,t.qty,t.entry,t.stop,t.exit,t.r,t.pnl,(t.mistakes||[]).map(k=>MISTAKES[k]).join(', '),(t.checked||[]).length+'/'+(t.total||0),t.emotion,t.note].map(q).join(';'));
+  return '﻿'+[head.join(';'),...rows].join('\n');
+}
+let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(ui.tab==='dash'&&$('eq'))equity(filtered())},150)});
+setInterval(()=>{const s=$('statusText');if(s)s.textContent=todayStatus()[2]},60000);
+</script>
+<script>
+'use strict';
+/* ===== Облак, абонамент, обучение, чат ===== */
+/* Попълни след създаване на Supabase проекта (Settings → API). Тези два ключа са публични. */
+const CFG={url:'https://hirolwbqqudxdddjdgux.supabase.co',anon:'sb_publishable_llgvOjYKlwPXee48CAFwkA_DOZFmM_w'};
+const sb=(CFG.url&&window.supabase)?supabase.createClient(CFG.url,CFG.anon):null;
+const cloud={user:null,profile:null,loaded:false,saveT:null,chan:null,catalog:null,lessons:{},msgs:[],cat:'Всички'};
+function isPro(){return !!(cloud.profile&&(cloud.profile.plan==='pro'||cloud.profile.is_admin))}
+const CATS=['Основи','Психология','Стратегия','Напреднало'];
+const LEVELS=['Начинаещ','Среден','Напреднал'];
+
+function renderAcct(){
+  const a=$('acct');if(!a)return;
+  if(!sb){a.innerHTML='';return}
+  if(cloud.user){const p=cloud.profile||{};a.innerHTML=`<span>${esc(p.name||cloud.user.email)}</span><span class="badge ${isPro()?'pro':''}">${p.is_admin?'АДМИН':isPro()?'PRO':'БЕЗПЛАТЕН'}</span><button class="btn small" data-act="logout">Изход</button>`}
+  else a.innerHTML=`<button class="btn small pri" data-act="go-login">Вход / Регистрация</button>`;
+}
+function cloudSave(){
+  if(!sb||!cloud.user||!cloud.loaded)return;
+  clearTimeout(cloud.saveT);
+  cloud.saveT=setTimeout(async()=>{
+    const {error}=await sb.from('journals').upsert({user_id:cloud.user.id,data:{demo:store.demo,trades:store.demo?[]:store.trades,cfg:store.cfg},updated_at:new Date().toISOString()});
+    if(error)toast('Не успях да запиша в облака. Провери интернета.');
+  },700);
+}
+async function loadProfile(){
+  const {data}=await sb.from('profiles').select('*').eq('id',cloud.user.id).maybeSingle();
+  cloud.profile=data||{plan:'free',name:cloud.user.email};
+}
+async function onLogin(user){
+  if(cloud.user&&cloud.user.id===user.id&&cloud.loaded)return;
+  cloud.user=user;cloud.loaded=false;
+  await loadProfile();
+  const {data}=await sb.from('journals').select('data').eq('user_id',user.id).maybeSingle();
+  const d=data&&data.data;
+  if(d&&Array.isArray(d.trades)&&(d.trades.length||!d.demo)){
+    store={demo:false,trades:d.trades,cfg:Object.assign(clone(DEFAULTS),d.cfg||{})};
+    try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}
+    cloud.loaded=true;
+  }else{
+    cloud.loaded=true;
+    if(!store.demo&&store.trades.length)toast('Сделките от този браузър са качени в профила ти.');
+    cloudSave();
+  }
+  if(ui.tab==='login')ui.tab='dash';
+  render();
+}
+function onLogout(){
+  if(cloud.chan){sb.removeChannel(cloud.chan);cloud.chan=null}
+  cloud.user=null;cloud.profile=null;cloud.loaded=false;cloud.lessons={};cloud.msgs=[];
+  store={demo:true,trades:demoTrades(),cfg:clone(DEFAULTS)};
+  try{localStorage.removeItem(KEY)}catch(e){}
+  ui.tab='dash';render();
+}
+async function callFn(name){
+  const {data,error}=await sb.functions.invoke(name,{body:{}});
+  if(error||!data||!data.url){toast((data&&data.error)||'Нещо се обърка. Опитай пак след малко.');return}
+  location.href=data.url;
+}
+const needSb=()=>`<div class="sheet empty">Профилите още не са свързани към сървъра.</div>`;
+
+/* Вход */
+function viewLogin(){
+  if(!sb){$('view').innerHTML=needSb();return}
+  $('view').innerHTML=`<div class="sheet" style="max-width:440px;width:100%;justify-self:center"><h2>Вход или регистрация</h2><p class="sub">С профил дневникът се пази в облака и го имаш на телефона и компютъра.</p>
+    <div style="display:grid;gap:10px">
+    <label class="f">Имейл<input type="email" id="l_email" autocomplete="email"></label>
+    <label class="f">Парола (поне 8 символа)<input type="password" id="l_pass" autocomplete="current-password"></label>
+    <label class="f">Име в чата (само при регистрация)<input id="l_name" maxlength="40"></label>
+    <div class="row"><button class="btn pri" data-act="login">Вход</button><button class="btn" data-act="signup">Регистрация</button><button class="btn small" data-act="reset">Забравена парола</button></div>
+    <p class="sub" id="l_msg" style="margin:0"></p></div></div>`;
+}
+const lmsg=(m,bad)=>{const e=$('l_msg');if(e){e.textContent=m;e.style.color=bad?'var(--loss)':'var(--win)'}};
+async function doAuth(kind){
+  const email=$('l_email').value.trim(),password=$('l_pass').value;
+  if(!email){lmsg('Напиши имейл.',1);return}
+  if(kind==='reset'){const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});lmsg(error?'Не успях да изпратя имейл. Опитай след малко.':'Изпратих линк за нова парола. Провери и Спам.',!!error);return}
+  if(password.length<8){lmsg('Паролата трябва да е поне 8 символа.',1);return}
+  if(kind==='signup'){
+    const name=$('l_name').value.trim()||email.split('@')[0];
+    const {data,error}=await sb.auth.signUp({email,password,options:{data:{name},emailRedirectTo:location.origin+location.pathname}});
+    if(error){lmsg(error.message.includes('registered')?'Този имейл вече има профил. Натисни „Вход“.':'Регистрацията не мина: '+error.message,1);return}
+    if(!data.session)lmsg('Провери имейла си (и Спам) и потвърди регистрацията.');
+  }else{
+    const {error}=await sb.auth.signInWithPassword({email,password});
+    if(error)lmsg(error.message.includes('confirm')?'Потвърди имейла си от писмото, което получи.':'Грешен имейл или парола.',1);
+  }
+}
+
+/* Абонамент */
+function viewPlan(){
+  const pro=isPro(),p=cloud.profile||{};
+  const end=p.current_period_end?new Date(p.current_period_end).toLocaleDateString('bg-BG'):'';
+  $('view').innerHTML=`<div class="plans">
+    <div class="sheet plan"><h2>Безплатен</h2><div class="price">0 €</div><ul><li>Дневник с автоматична проверка по правилата ти</li><li>Табло, крива, календар, грешки</li><li>Импорт от Tradovate, акаунт тракер</li><li>Пазене в облака с профил</li></ul>${!cloud.user&&sb?'<button class="btn" data-act="go-login">Направи профил</button>':''}</div>
+    <div class="sheet plan best"><h2>Пълен достъп</h2><div class="price">5 € <small style="font:500 14px var(--body);color:var(--muted)">/ месец</small></div><ul><li>Всичко от безплатния</li><li>Обучение: видео уроци и плейлисти</li><li>Разбор на всяка сделка спрямо правилата и статистиката ти</li><li>Общностен чат с други трейдъри</li></ul>
+    ${!sb?'':!cloud.user?'<button class="btn pri" data-act="go-login">Влез, за да се абонираш</button>':p.is_admin?'<span class="badge pro">Администратор</span>':pro?`<p class="sub">Абонаментът е активен${end?' до '+end+' (подновява се автоматично)':''}.</p><button class="btn" data-act="portal">Управлявай или спри абонамента</button>`:'<button class="btn pri" data-act="checkout">Абонирай се за 5 €/месец</button>'}</div>
+  </div>
+  ${cloud.user?`<div class="sheet"><h2>Име в чата</h2><div class="row"><input id="p_name" maxlength="40" value="${esc(p.name||'')}" style="max-width:260px"><button class="btn" data-act="save-name">Запази</button></div></div>`:''}
+  <p class="sub">Плащането се обработва сигурно от Stripe. Можеш да спреш абонамента по всяко време; достъпът остава до края на платения месец. Съдържанието е образователно и не е финансов съвет.</p>`;
+}
+
+/* Обучение */
+const ytId=s=>{s=String(s||'').trim();const m=s.match(/(?:youtu\.be\/|v=|embed\/|shorts\/|live\/)([\w-]{11})/);return m?m[1]:(/^[\w-]{11}$/.test(s)?s:'')};
+async function viewLearn(){
+  if(!sb){$('view').innerHTML=needSb();return}
+  $('view').innerHTML='<div class="sheet empty">Зареждам уроците…</div>';
+  const {data:cat,error}=await sb.rpc('lesson_catalog');
+  if(error){$('view').innerHTML='<div class="sheet empty">Уроците не се заредиха. Опитай пак.</div>';return}
+  cloud.catalog=cat||[];cloud.lessons={};
+  if(cloud.user){const {data}=await sb.from('lessons').select('id,youtube_id');(data||[]).forEach(l=>cloud.lessons[l.id]=l.youtube_id)}
+  if(ui.tab!=='learn')return;
+  const list=cloud.catalog.filter(l=>cloud.cat==='Всички'||l.category===cloud.cat);
+  const admin=cloud.profile&&cloud.profile.is_admin;
+  $('view').innerHTML=`${!isPro()?`<div class="banner"><span><b>Уроците са за абонати.</b> Безплатните са отключени за всички. ${cloud.user?'':'Влез, за да ги гледаш.'}</span><button class="btn small pri" data-tab="plan">Виж плана</button></div>`:''}
+  <div class="filters"><div class="seg" role="group" aria-label="Категория">${['Всички',...CATS].map(c=>`<button data-act="cat" data-cat="${c}" aria-pressed="${cloud.cat===c}">${c}</button>`).join('')}</div></div>
+  ${list.length?`<div class="lessons">${list.map(l=>{const vid=cloud.lessons[l.id];return `<div class="sheet lesson"><div class="vid" id="v${l.id}">${vid?`<button class="btn pri" data-act="play" data-id="${l.id}">▶ Пусни</button>`:'🔒 Само за абонати'}</div>
+    <div class="row" style="gap:6px;margin-bottom:4px"><span class="badge">${esc(l.category)}</span><span class="badge">${esc(l.level)}</span>${l.free?'<span class="badge pro">Безплатен</span>':''}</div>
+    <h2>${esc(l.title)}</h2><p class="sub" style="margin:4px 0 0">${esc(l.description||'')}</p>
+    ${admin?`<div class="row" style="margin-top:8px"><button class="btn small danger" data-act="del-lesson" data-id="${l.id}">Изтрий</button></div>`:''}</div>`}).join('')}</div>`:'<div class="sheet empty">Още няма уроци в тази категория.</div>'}
+  ${admin?`<div class="sheet"><h2>Добави урок</h2><p class="sub">Качи видеото в YouTube като „Unlisted“ и постави линка тук. Линкът се вижда само от абонатите.</p><div class="fields">
+    <label class="f">Заглавие<input id="n_title"></label><label class="f">Категория<select id="n_cat">${CATS.map(c=>`<option>${c}</option>`).join('')}</select></label>
+    <label class="f">Ниво<select id="n_level">${LEVELS.map(c=>`<option>${c}</option>`).join('')}</select></label><label class="f">Ред (по-малко = по-напред)<input id="n_sort" inputmode="numeric" value="100"></label></div>
+    <div class="group"><label class="f">YouTube линк<input id="n_yt" placeholder="https://youtu.be/..."></label></div>
+    <div class="group"><label class="f">Описание<textarea id="n_desc"></textarea></label></div>
+    <div class="group row"><button type="button" class="tick" id="n_free" aria-pressed="false" data-act="toggle-free">Безплатен за всички</button><button class="btn pri" data-act="add-lesson">Добави урока</button></div></div>`:''}`;
+}
+async function addLesson(){
+  const yt=ytId($('n_yt').value),title=$('n_title').value.trim();
+  if(!title){toast('Напиши заглавие.');return}
+  if(!yt){toast('Не разпознах YouTube линка.');return}
+  const {error}=await sb.from('lessons').insert({title,category:$('n_cat').value,level:$('n_level').value,sort:num($('n_sort').value)||100,description:$('n_desc').value.trim(),youtube_id:yt,free:$('n_free').getAttribute('aria-pressed')==='true'});
+  if(error){toast('Не успях да добавя урока: '+error.message);return}
+  toast('Урокът е добавен.');viewLearn();
+}
+
+/* Чат */
+async function viewChat(){
+  if(!sb){$('view').innerHTML=needSb();return}
+  if(!cloud.user){$('view').innerHTML='<div class="sheet empty">Влез, за да видиш чата. <button class="btn small pri" data-act="go-login">Вход</button></div>';return}
+  if(!isPro()){$('view').innerHTML='<div class="sheet"><h2>Общностният чат е за абонати</h2><p class="sub">Тук трейдъри от канала споделят сделки, въпроси и прогреса си.</p><button class="btn pri" data-tab="plan">Виж плана</button></div>';return}
+  $('view').innerHTML=`<div class="sheet"><h2>Общност</h2><p class="sub">Бъди полезен и уважителен. Без сигнали и без обещания за печалба.</p><div class="chatlog" id="chatlog"><div class="empty">Зареждам…</div></div>
+    <div class="row" style="margin-top:10px;align-items:flex-end"><textarea id="c_body" maxlength="1000" placeholder="Напиши съобщение (Enter изпраща, Shift+Enter нов ред)" style="flex:1 1 240px;min-height:46px;width:auto"></textarea><button class="btn pri" data-act="send">Изпрати</button></div></div>`;
+  const {data}=await sb.from('messages').select('*').order('created_at',{ascending:false}).limit(100);
+  cloud.msgs=(data||[]).reverse();drawChat();
+  if(!cloud.chan){
+    cloud.chan=sb.channel('chat').on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},p=>{if(!cloud.msgs.find(m=>m.id===p.new.id)){cloud.msgs.push(p.new);drawChat()}})
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'messages'},p=>{cloud.msgs=cloud.msgs.filter(m=>m.id!==p.old.id);drawChat()}).subscribe();
+  }
+}
+function drawChat(){
+  const box=$('chatlog');if(!box)return;
+  const admin=cloud.profile&&cloud.profile.is_admin;
+  box.innerHTML=cloud.msgs.length?cloud.msgs.map(m=>{const mine=m.user_id===cloud.user.id;const d=new Date(m.created_at);
+    return `<div class="msg ${mine?'me':''}"><b>${esc(m.name)}</b><time>${d.toLocaleDateString('bg-BG',{day:'2-digit',month:'2-digit'})} ${pad(d.getHours())}:${pad(d.getMinutes())}</time>${mine||admin?` <button class="btn small" style="padding:0 5px;font-size:11px" data-act="del-msg" data-id="${m.id}" aria-label="Изтрий">✕</button>`:''}<p>${esc(m.body)}</p></div>`}).join(''):'<div class="empty">Няма съобщения. Бъди пръв!</div>';
+  box.scrollTop=box.scrollHeight;
+}
+async function sendMsg(){
+  const e=$('c_body'),body=e.value.trim();if(!body)return;
+  e.value='';
+  const {data,error}=await sb.from('messages').insert({body,name:(cloud.profile&&cloud.profile.name)||'Трейдър'}).select().single();
+  if(error){e.value=body;toast('Съобщението не мина.');return}
+  if(!cloud.msgs.find(m=>m.id===data.id)){cloud.msgs.push(data);drawChat()}
+}
+
+/* Разбор на сделката (по правилата и статистиката, без външен AI) */
+function showCoach(id){
+  if(!isPro()){ui.tab='plan';render();toast('Разборът на сделките е в плана „Пълен достъп“.');return}
+  const all=analyse(store.trades),t=all.find(x=>x.id===id);if(!t)return;
+  const c=store.cfg,P=[];
+  const grp=(fn,v)=>{const x=all.filter(o=>fn(o)===v);return{n:x.length,sum:x.reduce((s,o)=>s+o.r,0)}};
+  const verdict=t.pending?'Импортирана сделка: отвори „Редакция“, отбележи чек-листа и грешките, и тогава разборът става пълен.'
+    :t.clean&&t.r<0?'Добра загуба. Спазил си плана и загубата е цената на бизнеса. Тук няма какво да поправяш.'
+    :t.clean&&t.r>=0?'Така изглежда работата: сделка по плана. Повтаряй точно това.'
+    :t.r>0?'Внимание: печалба с нарушение. Това е най-опасната сделка, защото учи мозъка, че нарушението се плаща.'
+    :'Загуба с нарушение. Тази загуба не е от пазара, а от решението.';
+  P.push(`<p class="insight" style="font-size:22px">${verdict}</p>`);
+  P.push(`<p><b>Резултат:</b> <span class="${cls(t.r)}">${fmtR(t.r)}</span>${t.pnl!=null?' ('+fmtM(t.pnl)+')':''}, ${bgDate(t.date)} ${esc(t.time||'')}, ${esc(t.setup||'без сетъп')}.</p>`);
+  const why={day:`Денят (${DAYS[parseDay(t.date).getDay()]}) е в списъка с дни, в които не търгуваш.`,window:`Входът е извън прозореца ${c.start}–${c.end}.`,over:`Това е сделка над лимита от ${c.maxTrades} на ден.`,afterstop:`Влязъл си след като дневният стоп от −${c.dailyLoss}R вече беше ударен.`,plan:`Чек-листът е отметнат ${(t.checked||[]).length} от ${t.total}.`};
+  t.flags.forEach(k=>{const g=grp(o=>o.flags.includes(k)?k:'',k);P.push(`<p class="neg"><b>✕ ${FLAGS[k]}.</b> <span style="color:var(--ink)">${why[k]} Всички сделки с това нарушение: ${g.n}, сбор ${fmtR(g.sum)}.</span></p>`)});
+  (t.mistakes||[]).forEach(k=>{const g=grp(o=>(o.mistakes||[]).includes(k)?k:'',k);P.push(`<p class="neg"><b>✕ ${MISTAKES[k]}.</b> <span style="color:var(--ink)">Досега си го правил ${g.n} пъти, общо ${fmtR(g.sum)}.</span></p>`)});
+  if(t.setup){const g=grp(o=>o.setup,t.setup);P.push(`<p><b>Сетъпът:</b> ${g.n} сделки, средно ${fmtR(g.sum/g.n)} на сделка${g.n<20?' (под 20 сделки, гледай го като насока)':''}.</p>`)}
+  if(t.time){const h=t.time.slice(0,2),g=grp(o=>(o.time||'').slice(0,2),h);P.push(`<p><b>Часът ${h}:00:</b> ${g.n} сделки, сбор ${fmtR(g.sum)}.</p>`)}
+  if(t.emotion){const g=grp(o=>o.emotion,t.emotion);P.push(`<p><b>Емоция „${esc(t.emotion)}“:</b> ${g.n} сделки, средно ${fmtR(g.sum/g.n)}.${t.emotion!=='Спокоен'?' Когато не си спокоен, правилото е по-важно от сетъпа.':''}</p>`)}
+  const cl=all.filter(o=>o.clean),dr=all.filter(o=>!o.clean&&!o.pending);
+  if(cl.length&&dr.length)P.push(`<p><b>Голямата картина:</b> чистите ти сделки носят средно ${fmtR(cl.reduce((s,o)=>s+o.r,0)/cl.length)}, а тези с нарушение ${fmtR(dr.reduce((s,o)=>s+o.r,0)/dr.length)}.</p>`);
+  $('modal').hidden=false;
+  $('modal').innerHTML=`<div class="sheet coach" style="max-height:88vh;overflow-y:auto"><h2>Разбор на сделката</h2>${P.join('')}<p class="sub">Разборът е по твоите правила и записи, не е финансов съвет.</p><div class="row"><button class="btn pri" data-act="close-modal">Затвори</button></div></div>`;
+}
+
+async function cloudAct(act,b){
+  switch(act){
+    case 'go-login':ui.tab='login';render();break;
+    case 'login':doAuth('login');break;
+    case 'signup':doAuth('signup');break;
+    case 'reset':doAuth('reset');break;
+    case 'logout':await sb.auth.signOut();break;
+    case 'checkout':b.disabled=true;b.textContent='Отварям плащането…';await callFn('create-checkout');b.disabled=false;b.textContent='Абонирай се за 5 €/месец';break;
+    case 'portal':b.disabled=true;await callFn('customer-portal');b.disabled=false;break;
+    case 'save-name':{const {error}=await sb.rpc('set_my_name',{new_name:$('p_name').value});if(error)toast('Не се запази.');else{await loadProfile();render();toast('Името е запазено.')}break}
+    case 'cat':cloud.cat=b.dataset.cat;viewLearn();break;
+    case 'play':{const v=cloud.lessons[b.dataset.id];$('v'+b.dataset.id).innerHTML=`<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Урок"></iframe>`;break}
+    case 'toggle-free':b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');break;
+    case 'add-lesson':addLesson();break;
+    case 'del-lesson':if(b.dataset.armed){const {error}=await sb.from('lessons').delete().eq('id',b.dataset.id);toast(error?'Не се изтри.':'Урокът е изтрит.');viewLearn()}else{b.dataset.armed=1;b.textContent='Сигурен ли си?'}break;
+    case 'send':sendMsg();break;
+    case 'del-msg':await sb.from('messages').delete().eq('id',b.dataset.id);cloud.msgs=cloud.msgs.filter(m=>String(m.id)!==b.dataset.id);drawChat();break;
+  }
+}
+document.addEventListener('keydown',e=>{
+  if(e.target.id==='c_body'&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}
+  if(e.target.id==='l_pass'&&e.key==='Enter'){e.preventDefault();doAuth('login')}
+});
+
+/* Старт */
+(async()=>{
+  const q=new URLSearchParams(location.search);
+  if(q.has('paid')){history.replaceState(null,'',location.pathname);ui.tab='plan'}
+  render();
+  if(!sb)return;
+  sb.auth.onAuthStateChange((ev,session)=>{
+    if(ev==='PASSWORD_RECOVERY'){const p=prompt('Нова парола (поне 8 символа):');if(p&&p.length>=8)sb.auth.updateUser({password:p}).then(({error})=>toast(error?'Паролата не се смени.':'Паролата е сменена.'))}
+    if(session&&session.user)setTimeout(()=>onLogin(session.user),0);
+    else if(ev==='SIGNED_OUT')onLogout();
+  });
+  if(q.get('paid')==='1'){
+    toast('Благодаря! Активирам абонамента…');
+    for(let i=0;i<10;i++){await new Promise(r=>setTimeout(r,2000));if(cloud.user){await loadProfile();if(isPro()){render();toast('Абонаментът е активен. Добре дошъл!');break}}}
+  }
+})();
+</script>
+</body>
+</html>
