@@ -696,6 +696,9 @@ function viewLogin(){
   $('view').innerHTML=`<div class="sheet" style="max-width:440px;width:100%;justify-self:center"><h2>Вход или регистрация</h2><p class="sub">С профил дневникът се пази в облака и го имаш на телефона и компютъра.</p>
     <div style="display:grid;gap:10px">
     <label class="f">Имейл<input type="email" id="l_email" autocomplete="email"></label>
+    <button class="btn pri" data-act="magic">Влез с линк по имейл (без парола)</button>
+    <p class="sub" style="margin:0">Пращаме ти линк. Отваряш го и си вътре. Работи и за нов профил.</p>
+    <p class="sub" style="margin:6px 0 0;font-weight:600">Или с парола:</p>
     <label class="f">Парола (поне 8 символа)<input type="password" id="l_pass" autocomplete="current-password"></label>
     <label class="f">Име в чата (само при регистрация)<input id="l_name" maxlength="40"></label>
     <div class="row"><button class="btn pri" data-act="login">Вход</button><button class="btn" data-act="signup">Регистрация</button><button class="btn small" data-act="reset">Забравена парола</button></div>
@@ -705,6 +708,8 @@ const lmsg=(m,bad)=>{const e=$('l_msg');if(e){e.textContent=m;e.style.color=bad?
 async function doAuth(kind){
   const email=$('l_email').value.trim(),password=$('l_pass').value;
   if(!email){lmsg('Напиши имейл.',1);return}
+  if(kind==='magic'){const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname,data:{name:($('l_name').value.trim()||email.split('@')[0])}}});
+    lmsg(error?(/rate|seconds/i.test(error.message)?'Току-що пратихме линк. Изчакай минута и опитай пак.':'Не успях да пратя линк: '+error.message):'Пратих ти линк за вход на '+email+'. Отвори писмото и натисни линка (провери и Спам).',!!error);return}
   if(kind==='reset'){const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});lmsg(error?'Не успях да изпратя имейл. Опитай след малко.':'Изпратих линк за нова парола. Провери и Спам.',!!error);return}
   if(password.length<8){lmsg('Паролата трябва да е поне 8 символа.',1);return}
   if(kind==='signup'){
@@ -830,6 +835,7 @@ async function cloudAct(act,b){
     case 'login':doAuth('login');break;
     case 'signup':doAuth('signup');break;
     case 'reset':doAuth('reset');break;
+    case 'magic':doAuth('magic');break;
     case 'logout':await sb.auth.signOut();break;
     case 'checkout':b.disabled=true;b.textContent='Отварям плащането…';await callFn('create-checkout');b.disabled=false;b.textContent='Абонирай се за 5 €/месец';break;
     case 'portal':b.disabled=true;await callFn('customer-portal');b.disabled=false;break;
