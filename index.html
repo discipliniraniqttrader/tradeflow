@@ -633,6 +633,7 @@ setInterval(()=>{const s=$('statusText');if(s)s.textContent=todayStatus()[2]},60
 /* ===== Облак, абонамент, обучение, чат ===== */
 /* Попълни след създаване на Supabase проекта (Settings → API). Тези два ключа са публични. */
 const CFG={url:'https://hirolwbqqudxdddjdgux.supabase.co',anon:'sb_publishable_llgvOjYKlwPXee48CAFwkA_DOZFmM_w'};
+const RECOVERY=/type=recovery/.test(location.hash+location.search);
 const sb=(CFG.url&&window.supabase)?supabase.createClient(CFG.url,CFG.anon):null;
 const cloud={user:null,profile:null,loaded:false,saveT:null,chan:null,catalog:null,lessons:{},msgs:[],cat:'Всички'};
 function isPro(){return !!(cloud.profile&&(cloud.profile.plan==='pro'||cloud.profile.is_admin))}
@@ -726,7 +727,8 @@ function viewPlan(){
     <div class="sheet plan best"><h2>Пълен достъп</h2><div class="price">5 € <small style="font:500 14px var(--body);color:var(--muted)">/ месец</small></div><ul><li>Всичко от безплатния</li><li>Видео уроци, с нов урок всеки месец</li><li>Седмичен отчет: какво ти струва най-много и върху какво да се фокусираш (и по имейл, ако искаш)</li><li>Изпращаш ми сделка и всеки месец разглеждам избрани сделки във видео</li><li>30-дневно предизвикателство по дисциплина с класация</li><li>Разбор на всяка сделка спрямо правилата и статистиката ти</li><li>Общностен чат с други трейдъри</li></ul>
     ${!sb?'':!cloud.user?'<button class="btn pri" data-act="go-login">Влез, за да се абонираш</button>':p.is_admin?'<span class="badge pro">Администратор</span>':pro?`<p class="sub">Абонаментът е активен${end?' до '+end+' (подновява се автоматично)':''}.</p><button class="btn" data-act="portal">Управлявай или спри абонамента</button>`:'<button class="btn pri" data-act="checkout">Абонирай се за 5 €/месец</button>'}</div>
   </div>
-  ${cloud.user?`<div class="sheet"><h2>Име в чата</h2><div class="row"><input id="p_name" maxlength="40" value="${esc(p.name||'')}" style="max-width:260px"><button class="btn" data-act="save-name">Запази</button></div></div>`:''}
+  ${cloud.user?`<div class="sheet"><h2>Име в чата</h2><div class="row"><input id="p_name" maxlength="40" value="${esc(p.name||'')}" style="max-width:260px"><button class="btn" data-act="save-name">Запази</button></div></div>
+  <div class="sheet" id="pwBox"><h2>Нова парола</h2><p class="sub">Смени паролата си. Поне 8 символа.</p><div class="row"><input type="password" id="p_pass" autocomplete="new-password" placeholder="Нова парола" style="max-width:260px"><button class="btn pri" data-act="save-pass">Смени паролата</button></div></div>`:''}
   <p class="sub">Плащането се обработва сигурно от Stripe. Можеш да спреш абонамента по всяко време; достъпът остава до края на платения месец. Съдържанието е образователно и не е финансов съвет.</p>`;
 }
 
@@ -832,6 +834,7 @@ async function cloudAct(act,b){
     case 'checkout':b.disabled=true;b.textContent='Отварям плащането…';await callFn('create-checkout');b.disabled=false;b.textContent='Абонирай се за 5 €/месец';break;
     case 'portal':b.disabled=true;await callFn('customer-portal');b.disabled=false;break;
     case 'save-name':{const {error}=await sb.rpc('set_my_name',{new_name:$('p_name').value});if(error)toast('Не се запази.');else{await loadProfile();render();toast('Името е запазено.')}break}
+    case 'save-pass':{const pw=$('p_pass').value;if(pw.length<8){toast('Паролата трябва да е поне 8 символа.');break}b.disabled=true;const {error}=await sb.auth.updateUser({password:pw});b.disabled=false;if(error)toast('Паролата не се смени: '+error.message);else{$('p_pass').value='';toast('Паролата е сменена. Следващия път влизаш с нея.')}break}
     case 'cat':cloud.cat=b.dataset.cat;viewLearn();break;
     case 'play':{const v=cloud.lessons[b.dataset.id];$('v'+b.dataset.id).innerHTML=`<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Урок"></iframe>`;break}
     case 'toggle-free':b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');break;
@@ -855,7 +858,7 @@ document.addEventListener('keydown',e=>{
   render();
   if(!sb)return;
   sb.auth.onAuthStateChange((ev,session)=>{
-    if(ev==='PASSWORD_RECOVERY'){const p=prompt('Нова парола (поне 8 символа):');if(p&&p.length>=8)sb.auth.updateUser({password:p}).then(({error})=>toast(error?'Паролата не се смени.':'Паролата е сменена.'))}
+    if(ev==='PASSWORD_RECOVERY'||(RECOVERY&&session&&!cloud.recShown)){cloud.recShown=true;ui.tab='plan';setTimeout(()=>{render();const b=$('pwBox');if(b){b.scrollIntoView({block:'center'});$('p_pass').focus()}toast('Напиши новата си парола и натисни „Смени паролата“.')},400)}
     if(session&&session.user)setTimeout(()=>onLogin(session.user),0);
     else if(ev==='SIGNED_OUT')onLogout();
   });
