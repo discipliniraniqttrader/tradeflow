@@ -880,8 +880,8 @@ document.addEventListener('keydown',e=>{
   if(e.target.id==='l_email'&&e.key==='Enter'){e.preventDefault();doAuth('magic')}
 });
 
-/* Старт */
-(async()=>{
+/* Старт: след като всички скриптове са заредени */
+window.addEventListener('DOMContentLoaded',async()=>{
   const q=new URLSearchParams(location.search);
   if(q.has('paid')){history.replaceState(null,'',location.pathname);ui.tab='plan'}
   else if(q.has('tab')){const t=q.get('tab');history.replaceState(null,'',location.pathname);if(TABS.some(x=>x[0]===t))ui.tab=t}
@@ -896,7 +896,7 @@ document.addEventListener('keydown',e=>{
     toast('Благодаря! Активирам абонамента…');
     for(let i=0;i<10;i++){await new Promise(r=>setTimeout(r,2000));if(cloud.user){await loadProfile();if(isPro()){render();toast('Абонаментът е активен. Добре дошъл!');break}}}
   }
-})();
+});
 </script>
 <script>
 'use strict';
