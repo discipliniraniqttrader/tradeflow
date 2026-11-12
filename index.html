@@ -695,21 +695,42 @@ function viewLogin(){
   if(!sb){$('view').innerHTML=needSb();return}
   $('view').innerHTML=`<div class="sheet" style="max-width:440px;width:100%;justify-self:center"><h2>Вход или регистрация</h2><p class="sub">С профил дневникът се пази в облака и го имаш на телефона и компютъра.</p>
     <div style="display:grid;gap:10px">
-    <label class="f">Имейл<input type="email" id="l_email" autocomplete="email"></label>
-    <button class="btn pri" data-act="magic">Влез с линк по имейл (без парола)</button>
-    <p class="sub" style="margin:0">Пращаме ти линк. Отваряш го и си вътре. Работи и за нов профил.</p>
-    <p class="sub" style="margin:6px 0 0;font-weight:600">Или с парола:</p>
+    <label class="f">Имейл<input type="email" id="l_email" autocomplete="email" value="${esc(ui.lEmail||'')}"></label>
+    <button class="btn pri" data-act="magic">Изпрати ми код за вход</button>
+    <div id="codeBox" style="display:${ui.codeSent?'grid':'none'};gap:10px">
+      <label class="f">Кодът от писмото<input id="l_code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456" style="font-size:22px;letter-spacing:4px;text-align:center"></label>
+      <button class="btn pri" data-act="code">Влез</button>
+    </div>
+    <p class="sub" id="l_msg" style="margin:0">Без парола: пращаме ти код на имейла, пишеш го тук и си вътре. Работи и за нов профил, на всяко устройство.</p>
+    <details style="margin-top:8px"><summary class="sub" style="cursor:pointer">Вход с парола</summary>
+    <div style="display:grid;gap:10px;margin-top:10px">
     <label class="f">Парола (поне 8 символа)<input type="password" id="l_pass" autocomplete="current-password"></label>
     <label class="f">Име в чата (само при регистрация)<input id="l_name" maxlength="40"></label>
-    <div class="row"><button class="btn pri" data-act="login">Вход</button><button class="btn" data-act="signup">Регистрация</button><button class="btn small" data-act="reset">Забравена парола</button></div>
-    <p class="sub" id="l_msg" style="margin:0"></p></div></div>`;
+    <div class="row"><button class="btn" data-act="login">Вход</button><button class="btn" data-act="signup">Регистрация</button></div>
+    <p class="sub" style="margin:0">Забравена парола? Влез с код отгоре и си сложи нова в „Абонамент“.</p></div></details></div></div>`;
+  if(ui.codeSent)setTimeout(()=>$('l_code')&&$('l_code').focus(),50);
 }
 const lmsg=(m,bad)=>{const e=$('l_msg');if(e){e.textContent=m;e.style.color=bad?'var(--loss)':'var(--win)'}};
 async function doAuth(kind){
-  const email=$('l_email').value.trim(),password=$('l_pass').value;
-  if(!email){lmsg('Напиши имейл.',1);return}
-  if(kind==='magic'){const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname,data:{name:($('l_name').value.trim()||email.split('@')[0])}}});
-    lmsg(error?(/rate|seconds/i.test(error.message)?'Току-що пратихме линк. Изчакай минута и опитай пак.':'Не успях да пратя линк: '+error.message):'Пратих ти линк за вход на '+email+'. Отвори писмото и натисни линка (провери и Спам).',!!error);return}
+  const email=$('l_email').value.trim().toLowerCase(),password=$('l_pass').value;
+  if(!email||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){lmsg('Напиши имейла си.',1);return}
+  ui.lEmail=email;
+  if(kind==='magic'){
+    const b=document.querySelector('[data-act="magic"]');if(b){b.disabled=true;b.textContent='Пращам…'}
+    const {error}=await sb.auth.signInWithOtp({email,options:{shouldCreateUser:true,emailRedirectTo:location.origin+location.pathname,data:{name:email.split('@')[0]}}});
+    if(b){b.disabled=false;b.textContent='Изпрати нов код'}
+    if(error){lmsg(/rate|seconds|security/i.test(error.message)?'Кодът вече е пратен. Изчакай минута преди нов (провери и Спам).':'Не успях да пратя кода: '+error.message,1);if(/rate|seconds|security/i.test(error.message)){ui.codeSent=true;$('codeBox').style.display='grid'}return}
+    ui.codeSent=true;$('codeBox').style.display='grid';$('l_code').focus();
+    lmsg('Пратих код на '+email+'. Напиши го тук (провери и Спам). Може и просто да натиснеш линка в писмото.');return}
+  if(kind==='code'){
+    const token=($('l_code').value||'').replace(/\D/g,'');
+    if(token.length<6){lmsg('Кодът е от цифри, поне 6.',1);return}
+    const b=document.querySelector('[data-act="code"]');if(b){b.disabled=true;b.textContent='Проверявам…'}
+    let {error}=await sb.auth.verifyOtp({email,token,type:'email'});
+    if(error){const r=await sb.auth.verifyOtp({email,token,type:'signup'});if(!r.error)error=null}
+    if(b){b.disabled=false;b.textContent='Влез'}
+    if(error){lmsg(/expired|invalid/i.test(error.message)?'Кодът е грешен или изтекъл. Натисни „Изпрати нов код“.':'Входът не мина: '+error.message,1);return}
+    ui.codeSent=false;lmsg('Готово, влизаш…');return}
   if(kind==='reset'){const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});lmsg(error?'Не успях да изпратя имейл. Опитай след малко.':'Изпратих линк за нова парола. Провери и Спам.',!!error);return}
   if(password.length<8){lmsg('Паролата трябва да е поне 8 символа.',1);return}
   if(kind==='signup'){
@@ -836,6 +857,7 @@ async function cloudAct(act,b){
     case 'signup':doAuth('signup');break;
     case 'reset':doAuth('reset');break;
     case 'magic':doAuth('magic');break;
+    case 'code':doAuth('code');break;
     case 'logout':await sb.auth.signOut();break;
     case 'checkout':b.disabled=true;b.textContent='Отварям плащането…';await callFn('create-checkout');b.disabled=false;b.textContent='Абонирай се за 5 €/месец';break;
     case 'portal':b.disabled=true;await callFn('customer-portal');b.disabled=false;break;
@@ -854,6 +876,8 @@ async function cloudAct(act,b){
 document.addEventListener('keydown',e=>{
   if(e.target.id==='c_body'&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}
   if(e.target.id==='l_pass'&&e.key==='Enter'){e.preventDefault();doAuth('login')}
+  if(e.target.id==='l_code'&&e.key==='Enter'){e.preventDefault();doAuth('code')}
+  if(e.target.id==='l_email'&&e.key==='Enter'){e.preventDefault();doAuth('magic')}
 });
 
 /* Старт */
